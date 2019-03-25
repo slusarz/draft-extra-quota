@@ -1,0 +1,501 @@
+<?xml version="1.0"?>
+<!DOCTYPE rfc SYSTEM "rfc2629.dtd" [
+	<!ENTITY rfc2087 PUBLIC '' 'http://xml.resource.org/public/rfc/bibxml/reference.RFC.2087.xml'>
+	<!ENTITY rfc2119 PUBLIC '' 'http://xml.resource.org/public/rfc/bibxml/reference.RFC.2119.xml'>
+	<!ENTITY rfc3501 PUBLIC '' 'http://xml.resource.org/public/rfc/bibxml/reference.RFC.3501.xml'>
+]>
+<?xml-stylesheet type="text/xsl" href="rfc2629.xslt"?>
+<rfc category="std" ipr="pre5378Trust200902" docName="draft-melnikov-extra-quota-00">
+	<?xml-stylesheet type='text/xsl' href='rfc2629.xslt' ?>
+	<?rfc toc="yes" ?>
+	<?rfc symrefs="yes" ?>
+	<?rfc sortrefs="yes"?>
+	<?rfc iprnotified="no" ?>
+	<?rfc strict="yes" ?>
+	<?rfc comments="yes" ?>
+	<?rfc inline="yes" ?>
+	<?rfc compact="yes"?>
+	<?rfc subcompact="no"?>
+	<front>
+		<title abbrev="IMAP QUOTA">
+			IMAP QUOTA Extension
+		</title>
+		<author initials="D.A." surname="Cridland" fullname="Dave A. Cridland">
+			<organization/>
+			<address>
+				<email>dave@cridland.net</email>
+			</address>
+		</author>
+		<author initials="A." surname="Melnikov" fullname="Alexey Melnikov">
+			<organization abbrev="Isode">
+				Isode Limited
+			</organization>
+			<address>
+				<email>alexey.melnikov@isode.com</email>
+				<uri>https://www.isode.com</uri>
+			</address>
+		</author>
+		<date year="2019"/>
+		<abstract>
+			<t>The QUOTA extension of the Internet Message Access Protocol (RFC 3501)
+			permits administrative limits on resource usage (quotas) to be
+			manipulated through the IMAP protocol.</t>
+      
+			<t>This memo obsoletes RFC 2087, but attempts to remain backwards
+			compatible whenever possible.</t>
+		</abstract>
+	</front>
+	<middle>
+		<section title="Document Conventions">
+			<t>In protocol examples, this document uses a prefix of "C: " to denote lines sent by the client to the server, and
+			"S: " for lines sent by the server to the client. Lines prefixed with "// " are comments explaining the previous protocol line.
+			These prefixes and comments are not part of the protocol. Lines without any of these prefixes are continuations of the previous line,
+			and no line break is present in the protocol unless specifically mentioned.</t>
+			<t>Again, for examples, the hierarchy separator on the server is presumed to be "/" throughout.
+      None of these assumptions is required nor recommended by this document.</t>
+			<t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+			"SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+			document are to be interpreted as described in <xref target="RFC2119">RFC2119</xref>.</t>
+			<t>Other capitalised words are <xref target="RFC3501">IMAP4</xref> keywords or keywords from this document.</t>
+		</section>
+		<section title="Introduction and Overview">
+			<t>The capability "QUOTA", denotes a <xref target="RFC2087">RFC2087</xref> compliant server.
+			Some commands and responses defined in this document are not present in such servers,
+			and clients MUST NOT rely on their presence in the absence of any capability beginning
+			with "QUOTA=".</t>
+
+			<t>Any server compliant with this document MUST also return at least one capability
+			starting with "QUOTA=RES-" prefix, as described in <xref target="Quota-Resource"/>.</t>
+			
+			<t>This document also reserves all other capabilities starting with "QUOTA=" prefix
+			to future standard track or experimental extensions to this document.</t>
+
+			<t>Quotas can be used to restrict clients for administrative reasons, but the QUOTA extension can also be used to indicate system limits and current usage
+			levels to clients.</t>
+			<t>Although <xref target="RFC2087">RFC2087</xref> specified an IMAP4 QUOTA extension, and this has seen deployment in servers,
+			it has seen little deployment in clients. Since the meaning of the resources was left implementation-dependant, it was impossible for a client
+			implementation to determine which resources were supported, and impossible to determine which mailboxes were in a given quota root, without
+			a priori knowledge of the implementation.</t>
+		</section>
+		<section title="Terms">
+			<section anchor="Quota-Resource" title="Resource">
+				<t>A resource has a name, a formal definition.</t>
+				<section title="Name">
+					<t><cref>Fix IANA considerations section.</cref></t>
+					<t>The resource name is an atom, as defined in <xref target="RFC3501">IMAP4</xref>. These MUST be registered with IANA.
+          Implementation specific resources begin with "V-" <!--and they still MUST be registered with IANA-->.</t>
+					<t>Supported resource names MUST be advertised as a capability, by prepending the resource name with "QUOTA=RES-".
+          A server compliant with this specification is not required to support all reported resource types on all quota roots.</t>
+				</section>
+				<section title="Definition">
+					<t>The resource definition or document containing it, while not visible through the protocol, SHOULD be registered with IANA.</t>
+					<t>The usage of a resource MUST be represented as a 32 bit unsigned integer.
+          <!--////Alexey: this doesn't make sense: 0 indicates no usage of a resource.-->
+          0 indicates that the resource is exhausted. Usage integers <!--SHOULD NOT?-->MUST NOT represent proportional use, such that a client can compare
+					available resource between two separate quota roots or servers with reasonable accuracy.</t>
+					<t>Limits will be specified as, and MUST be represented as, an integer. <!--////Alexey: Is this useful?-->0 indicates that any usage is prohibited.</t>
+					<t>Limits may be hard or soft - that is, an implementation MAY choose, or be configured, to disallow any command if the limit 
+					on a resource
+					is or would be exceeded.</t>
+					<t>All resources which the server handles must be advertised in a CAPABILITY constisting of the resource name prefixed by "QUOTA=RES-".
+          For compatability with <xref target="RFC2087">RFC2087</xref>, a client which discovers resources available on the server
+          which are not advertised through this mechanism MUST treat them as if they were completely opaque, and without any meaning.</t>
+					<t>The resources <xref target="STORAGE">STORAGE</xref>, <xref target="MESSAGE">MESSAGE</xref> and <xref target="MAILBOX">MAILBOX</xref>
+          are defined in this document.</t>
+				</section>
+			</section>
+			<section title="Quota Root">
+				<t>Each mailbox has zero or more implementation-defined named "quota roots".  Each quota root has zero or more resource limits (quotas). All mailboxes that share the same named quota root share the resource limits of the quota root.</t>
+				<t>Quota root names need not be mailbox names, nor is there any relationship defined
+				by this memo between a Quota root name and a mailbox name. A quota root name is an astring, as defined in <xref target="RFC3501">IMAP4</xref>.
+        It SHOULD be treated as an opaque string by any clients<!--which do not have a priori knowledge of the server implementation-->.</t>
+				<!--
+					Stripped, this only works if the hierarchy fits a suitable model. Given that there are implementations which use a namespace of "" to indicate personal mailboxes,
+					this is difficult.
+					<t>It is RECOMMENDED that implementations model the quota root on the mailbox hierarchy.</t>
+				-->
+				<t>Quota roots are used since not all implementations may be able to calculate usage, or apply quotas, on arbitary mailboxes or mailbox hierarchies.</t>
+				<t>Not all resources may be limitable or calculatable for all quota roots. Further, not all resources may support all limits - some limits may be
+				present in the underlying system. A server implementation of this memo SHOULD advise the client of such inherent limits, by generating <xref target="QUOTA">QUOTA</xref> responses and SHOULD advise the client
+				of which resources are limitable for a particular quota root. A <xref target="SETQUOTA">SETQUOTA</xref> command MAY also round a quota limit in an implementation dependant way, if the granularity
+				of the underlying system demands it. A client MUST be prepared for a <xref target="SETQUOTA">SETQUOTA</xref> command to fail if a limit cannot be set.</t>
+
+				<t>Implementation Notes:<vspace/>
+				This means that, for example under UNIX, a quota root may have a <xref target="MESSAGE">MESSAGE</xref> quota always set due to the number of inodes
+				available on the filesystem, and similarly <xref target="STORAGE">STORAGE</xref> may be rounded to the nearest block and limited by free filesystem space.
+				</t>
+			</section>
+		</section>
+		<section title="Definitions">
+			<section title="Commands">
+				<t>The following commands exist for manipulation and querying quotas.</t>
+				<section anchor="GETQUOTA" title="GETQUOTA">
+					<t>
+						<list style="hanging">
+							<t hangText="Arguments:">quota root</t>
+							<t hangText="Responses:">REQUIRED untagged responses: QUOTA<vspace/></t>
+							<t hangText="Result:   ">OK - getquota completed<vspace/>
+							&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NO - getquota error: no such quota root, permission denied<vspace/>
+							&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BAD - command unknown or arguments invalid</t>
+						</list>
+					</t>
+					<t>
+						The GETQUOTA command takes the name of a quota root and returns the quota root's
+						resource usage and limits in an untagged QUOTA response.
+						The client can try using any of the resource types returned in CAPABILITY response
+						(i.e. all capability items with "QUOTA=RES-" prefix), however the server is not
+						required to support any specific resource type for any particular quota root.</t>
+					<t>
+						<list style="empty">
+							<t>Example:</t>
+							<t>S: * CAPABILITY [...] QUOTA QUOTA=RES-STORAGE [...]<vspace/>
+							[...]<vspace/>
+							C: G0001 GETQUOTA "!partition/sda4"<vspace/>
+							S: * QUOTA "!partition/sda4" (STORAGE 104 10923847)<vspace/>
+							S: G0001 OK Getquota complete</t>
+						</list>
+					</t>
+				</section>
+				<section anchor="GETQUOTAROOT" title="GETQUOTAROOT">
+					<t>
+						<list style="empty">
+							<t>Arguments:	mailbox name</t>
+							<t>Responses:	REQUIRED untagged responses: QUOTAROOT, QUOTA</t>
+							<t>Result:		OK - getquotaroot completed<vspace/>
+											NO - getquotaroot error: no such mailbox, permission denied
+<vspace/>
+											BAD - command unknown or arguments invalid</t>
+						</list>
+					</t>
+					<t>The GETQUOTAROOT command takes the name of a mailbox and returns the list of
+					quota roots for the mailbox in an untagged QUOTAROOT response.
+					For each listed quota root, it also returns the quota root's resource usage and
+					limits in an untagged QUOTA response.</t>
+
+					<t><cref>Need to clarify that the mailbox name doesn't have to reference an
+					existing mailbox. This can be handy in order to determine which quotaroot
+					would apply to a mailbox when it gets created.</cref></t>
+					<t>
+						<list style="empty">
+							<t>Example:</t>
+							<t>S: * CAPABILITY [...] QUOTA QUOTA=RES-STORAGE QUOTA=RES-MESSAGE [...]<vspace/>
+							[...]<vspace/>
+							C: G0002 GETQUOTAROOT INBOX<vspace/>
+							S: * QUOTAROOT INBOX "#user/alice" "!partition/sda4"<vspace/>
+							S: * QUOTA "#user/alice" (MESSAGE 42 1000)<vspace/>
+							S: * QUOTA "!partition/sda4" (STORAGE 104 10923847)<vspace/>
+							S: G0002 OK Getquotaroot complete</t>
+						</list>
+					</t>
+				</section>
+				<section anchor="SETQUOTA" title="SETQUOTA">
+					<t>
+						<list style="empty">
+							<t>Arguments:	quota root</t>
+							<t>				list of resource limits</t>
+							<t>Responses:	untagged responses: QUOTA</t>
+							<t>Result:		OK - setquota completed<vspace/>
+											NO - setquota error: can't set that data<vspace/>
+											BAD - command unknown or arguments invalid</t>
+						</list>
+					</t>
+					<t>The SETQUOTA command takes the name of a mailbox quota root and a
+          list of resource limits. The resource limits for the named quota root are changed
+          to be the specified limits.  Any previous resource limits for the named quota root are discarded.</t>
+					<t>If the named quota root did not previously exist, an implementation
+          may optionally create it and change the quota roots for any number of
+          existing mailboxes in an implementation-defined manner.</t>
+					<t><cref>Should the server be sending untagged QUOTA responses for all side effect changes?</cref></t>
+					<t>
+						<list style="empty">
+							<t>Example:</t>
+							<t>S: * CAPABILITY [...] QUOTA QUOTA=RES-STORAGE QUOTA=RES-MESSAGE [...]<vspace/>
+							[...]<vspace/>
+							C: S0000 GETQUOTA "#user/alice"<vspace/>
+							S: * QUOTA "#user/alice" (STORAGE 54 111 MESSAGE 42 1000)<vspace/>
+							S: S0000 OK Getquota completed<vspace/>
+							C: S0001 SETQUOTA "#user/alice" (STORAGE 510)<vspace/>
+							S: * QUOTA "#user/alice" (STORAGE 58 512)</t>
+							<t>// The server has rounded the STORAGE quota limit requested to the nearest 512 blocks of 1024 octects, or
+						else another client has performed a near simultaneous SETQUOTA, using a limit of 512.</t>
+							<t>S: S0001 OK Rounded quota<vspace/>
+							C: S0002 SETQUOTA "!partition/sda4" (STORAGE 99999999)<vspace/>
+							S: * QUOTA "!partition/sda4" (STORAGE 104 10923847)</t>
+							<t>// The server has not changed the quota, since this is a filesystem limit, and cannot be changed. The QUOTA response here is entirely optional.</t>
+							<t>S: S0002 NO Cannot change system limit</t>
+						</list>
+					</t>
+				</section>
+				<section anchor="STATUS_RECOVERABLE" title="New STATUS attributes">
+					<t>DELETED-MESSAGES and DELETED-STORAGE status data items allow to estimate the amount of resource freed by an EXPUNGE on a mailbox.</t>
+					<t>DELETED-MESSAGES status data item requests the server to return the number of messages with \Deleted flag set.</t>
+					<t>DELETED-STORAGE status data item requests the server to return
+					the amount of storage space that can be reclaimed by performing EXPUNGE
+					on the mailbox. The server SHOULD return the exact value, however it is
+					recognized that the server may have to do non-trivial amount of work to
+					calculate it. If the calculation of the exact value would take a long time,
+					the server MAY instead return the sum of RFC822.SIZEs of messages with
+					the \Deleted flag set.</t>
+					<t>
+						<list style="empty">
+							<t>Example:</t>
+							<t>S: * CAPABILITY [...] QUOTA QUOTA=RES-STORAGE QUOTA-RES-MESSAGE [...]<vspace/>
+							[...]<vspace/>
+							C: S0003 STATUS INBOX (MESSAGES DELETED-MESSAGES DELETED-STORAGE)<vspace/>
+							S: * STATUS INBOX (MESSAGES 12 DELETED-MESSAGES 4 DELETED-STORAGE 8)</t>
+							<t>// 12 messages, 4 of which would be deleted when an EXPUNGE happens.</t>
+							<t>S: S0003 OK Status complete.</t>
+						</list>
+					</t>
+				</section>
+			</section>
+			<section title="Responses">
+				<t>The following responses may be sent by the server.</t>
+				<section anchor="QUOTA" title="QUOTA">
+					<t>
+						<list style="empty">
+							<t>Data:	quota root name<vspace/>
+										list of resource names, usages, and limits</t>
+						</list>
+					</t>
+					<t>This response occurs as a result of a GETQUOTA or GETQUOTAROOT command.
+ The first string is the name of the quota root for which this quota applies.</t>
+					<t>The name is followed by a S-expression format list of the resource usage and limits of the quota root.  The list contains zero or more triplets.  Each triplet contains a resource name, the current usage of the resource, and the resource limit.</t>
+					<t>Resources not named in the list are not limited in the quota root. Thus, an empty list means there are no administrative resource limits in the quota root.</t>
+					<t>Example:    S: * QUOTA "" (STORAGE 10 512)</t>
+				</section>
+				<section anchor="QUOTAROOT" title="QUOTAROOT">
+					<t>
+						<list style="empty">
+							<t>Data:	mailbox name<vspace/>
+										zero or more quota root names</t>
+						</list>
+					</t>
+					<t>This response occurs as a result of a GETQUOTAROOT command.  The first string is the mailbox and the remaining strings are the names of the quota roots for the mailbox.</t>
+					<t>Example:</t>
+					<t>S: * QUOTAROOT INBOX ""</t>
+					<t>S: * QUOTAROOT comp.mail.mime</t>
+				</section>
+			</section>
+			<section title="Response Codes">
+				<section anchor="OVERQUOTA" title="OVERQUOTA">
+					<t>OVERQUOTA response code SHOULD be returned in the tagged NO response to
+					an APPEND/COPY when the addition of the message(s) puts mailbox over any one of its quota limits.</t>
+					<t>Example:</t>
+					<t>
+						<list style="empty">
+							<t>S: C: A003 APPEND Drafts (\Seen $MDNSent) {310}<vspace/>
+							S: + Ready for literal data<vspace/>
+							C: Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)<vspace/>
+							C: From: Fred Foobar &lt;foobar@Blurdybloop.COM&gt;<vspace/>
+							C: Subject: afternoon meeting<vspace/>
+							C: To: mooch@owatagu.siam.edu<vspace/>
+							C: Message-Id: &lt;B27397-0100000@Blurdybloop.COM&gt;<vspace/>
+							C: MIME-Version: 1.0<vspace/>
+							C: Content-Type: TEXT/PLAIN; CHARSET=US-ASCII<vspace/>
+							C:<vspace/>
+							C: Hello Joe, do you think we can meet at 3:30 tomorrow?<vspace/>
+							C:<vspace/>
+							S: A003 NO [OVERQUOTA] APPEND Failed</t>
+						</list>
+					</t>
+					<t>The OVERQUOTA response code MAY also be returned in an untagged NO response
+					when the currently selected mailbox exceeds soft quota. 
+					<cref>What about per-user quotas when no mailbox is selected or when the destination mailbox
+          (different from the currently selected one) is affected?</cref>
+					
+					The response code MUST be followed by the tag of the command that
+					caused this (such as APPEND or COPY). The tag MUST be omitted if
+					an external event (e.g. LMTP delivery or APPEND/COPY in another IMAP
+					connection) caused this event.
+					</t>
+
+					<t><!--/////Returning this information is useful, but it might not work
+          with response code syntax restrictions: Should the exceeded quota resource type be added as a parameter?--></t>
+
+					<t>Example:</t>
+					<t>
+						<list style="empty">
+							<t>
+								S: C: A003 APPEND Drafts (\Seen $MDNSent) {310}<vspace/>
+								S: + Ready for literal data<vspace/>
+								C: Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)<vspace/>
+								C: From: Fred Foobar &lt;foobar@Blurdybloop.COM&gt;<vspace/>
+								C: Subject: afternoon meeting<vspace/>
+								C: To: mooch@owatagu.siam.edu<vspace/>
+								C: Message-Id: &lt;B27397-0100000@Blurdybloop.COM&gt;<vspace/>
+								C: MIME-Version: 1.0<vspace/>
+								C: Content-Type: TEXT/PLAIN; CHARSET=US-ASCII<vspace/>
+								C:<vspace/>
+								C: Hello Joe, do you think we can meet at 3:30 tomorrow?<vspace/>
+								C:<vspace/>
+								S: * NO [OVERQUOTA A003] Soft quota has been exceeded<vspace/>
+								S: A003 OK [APPENDUID 38505 3955] APPEND completed
+							</t>
+						</list>
+					</t>
+
+				</section>
+			</section>
+		</section>
+		<section title="Resource Type Definitions">
+			<t>The following resource types are defined in this memo. A server supporting a resource type MUST advertise this as a CAPABILITY with a name consisting of the resource name
+			prefixed by "QUOTA=RES-". A server MAY support mupltiple resource types, and MUST advertise all resource types it supports.</t>
+			<section anchor="STORAGE" title="STORAGE">
+				<t>The physical space estimate, in  units of 1024 octets, of the mailboxes governed by the quota root.
+        This MAY not be the same as the sum of the RFC822.SIZE of the messages.
+        Some implementations MAY include metadata sizes for the messages and mailboxes,
+				other implementations MAY store messages in such a way that the physical space used is smaller, for example due to use of compression.
+        Additional messages might not increase the usage. Client MUST NOT use the usage figure for anything other than informational purposes,
+        for example, they MUST NOT refuse to APPEND a message if the limit less the usage is smaller than the RFC822.SIZE divided by 1024 of the message,
+				but it MAY warn about such condition.</t>
+				<t>The usage figure may change as a result of performing actions not associated with adding new messages to the mailbox, such as SEARCH,
+				since this may increase the amount of metadata included in the calculations.</t>
+				<t>Support for this resource MUST be indicated by the server by advertising the CAPABILITY "QUOTA=RES-STORAGE".</t>
+				<t>A resource named the same was also given as an example in <xref target="RFC2087">RFC2087</xref>, clients conformant to this specification
+				connecting to servers which do not advertise "QUOTA=RES-STORAGE", yet allow a resource named STORAGE, MUST NOT assume that it is the same resource.
+				<cref>?</cref></t>
+			</section>
+			<section anchor="MESSAGE" title="MESSAGE">
+				<t>The number of messages stored within the mailboxes governed by the quota root. This MUST be an exact number, however, clients
+				MUST NOT assume that a change in the usage indicates a change in the number of messages available, since the quota root may include mailboxes
+				the client has no access to.<!--////Alexey: isn't this a security leak?--></t>
+        
+				<t>Support for this resource MUST be indicated by the server by advertising the CAPABILITY "QUOTA=RES-MESSAGE".</t>
+				<t>A resource named the same was also given as an example in <xref target="RFC2087">RFC2087</xref>, clients conformant to this specification
+				connecting to servers which do not advertise "QUOTA=RES-MESSAGE", yet allow a resource named MESSAGE, MUST NOT assume that it is the same resource.</t>
+			</section>
+			<section anchor="MAILBOX" title="MAILBOX">
+				<t>The number of mailboxes governed by the quota root. This MUST be an exact number, however, clients
+				MUST NOT assume that a change in the usage indicates a change in the number of mailboxes, since the quota root may include mailboxes
+				the client has no access to.<!--////Alexey: isn't this a security leak?--></t>
+				<t>Support for this resource MUST be indicated by the server by advertising the CAPABILITY "QUOTA=RES-MAILBOX".</t>
+			</section>
+		</section>
+		<section title="Formal syntax">
+			<t>The following syntax specification uses the Augmented Backus-Naur Form (ABNF) notation as specified in <xref target="ABNF"/>.</t>
+			<t>Non-terminals referenced but not defined below are as defined by <xref target="RFC3501">IMAP4</xref>.</t>
+			<t>Except as noted otherwise, all alphabetic characters are case-insensitive.  The use of upper or lower case characters to define token strings is for editorial clarity only.  Implementations MUST accept these strings in a case-insensitive fashion.</t>
+			<t>
+			<list style="hanging" hangIndent="20">
+			<t hangText="getquota           ="> "GETQUOTA" SP quota-root-name</t>
+			<t hangText="getquotaroot       ="> "GETQUOTAROOT" SP mailbox</t>
+			<t hangText="quota-list         ="> "(" quota-resource *(SP quota-resource) ")"</t>
+			<t hangText="quota-resource     ="> resource-name SP resource-usage SP resource-limit</t>
+			<t hangText="quota-response     ="> "QUOTA" SP quota-root-name SP quota-list</t>
+			<t hangText="quotaroot-response ="> "QUOTAROOT" SP mailbox *(SP quota-root-name)</t>
+			<t hangText="setquota           ="> "SETQUOTA" SP quota-root-name SP setquota-list</t>
+			<t hangText="setquota-list      ="> "(" [setquota-resource *(SP setquota-resource)] ")"</t>
+			<t hangText="setquota-resource  ="> resource-name SP resource-limit</t>
+			<t hangText="quota-root-name    ="> astring</t>
+			<t hangText="resource-limit     ="> number</t>
+			<t hangText="resource-name      ="> "STORAGE" / "MESSAGE" / "MAILBOX" /<vspace/>
+                        resource-name-vnd /<vspace/>
+                        resource-name-ext</t>
+			<t hangText="resource-name-vnd  ="> "V-" atom<vspace/>
+                        ;; Vendor specific, must be registered with IANA.<vspace/>
+                        ;; The "V-" prefix should be followed by a domain name<vspace/>
+                        ;; under vendor's control.
+                      </t>
+			<t hangText="resource-name-ext  ="> atom<vspace/>
+                        ;; Not starting with V- and defined<vspace/>
+                        ;; in a Standard Track or Experimental RFC</t>
+			<t hangText="resource-names ="> "(" [resource-name *(SP resource-name)] ")"</t>
+			<t hangText="resource-usage     ="> number<vspace/>
+                        ;; must be less than corresponding resource-limit</t>
+			<t hangText="capability-quota   ="> capa-quota-res</t>
+			<t hangText="capa-quota-res     ="> "QUOTA=RES-" resource-name</t>
+			<t hangText="status-att         =/"> "DELETED-MESSAGES" / "DELETED-STORAGE"</t>
+			<t>
+				<cref>Should this be optional unless the server implements MESSAGE/STORAGE?</cref>
+			</t>
+			<t hangText="resp-text-code     =/"> "OVERQUOTA" [SP tag]</t>
+			</list>
+			</t>
+		</section>
+
+		<section title="Security Considerations">
+			<t>Implementors should be careful to make sure the implementation of
+				these commands does not violate the site's security policy. The
+				resource usage of other users is likely to be considered confidential
+				information and should not be divulged to unauthorized persons.
+			</t>
+
+		</section>
+		
+		<section title="IANA Considerations">
+			<t>
+				IMAP4 capabilities are registered by publishing a standards track or
+				IESG approved experimental RFC.  The registry is currently located
+				at:
+			</t>
+
+			<figure>
+				<artwork>
+					<![CDATA[
+   http://www.iana.org/assignments/imap4-capabilities
+    ]]>
+				</artwork>
+			</figure>
+
+			<t>IANA is requested to update definition of the QUOTA extension to
+			point to this document.</t>
+
+			<t><cref>Define registry for "QUOTA=RES-" and add initial registrations.</cref></t>
+		</section>
+
+		<section title="Acknowledgments">
+			<t>
+				Authors of this document would like to thank the following people
+				who provided useful comments or participated in discussions that
+				lead to this update to RFC 2087:<vspace/>
+			        John Myers,<vspace/>
+			        Cyrus Daboo,<vspace/>
+					Lyndon Nerenberg
+			</t>
+
+			<t>This document is a revision of RFC 2087. It borrows a lot of text
+			from RFC 2087. Thus work of the RFC 2087 author John Myers is
+			appreciated.
+			</t>
+		</section>
+		
+		<section title="Changes since RFC 2087">
+			<t>
+			This document is a revision of RFC 2087. It tries to clarify meaning
+			of different terms used by RFC 2087. It also provides more examples,
+			gives guidance on allowed server behaviour, defines IANA registry
+			for quota resource types and provides initial registrations for 3 of
+			them.</t>
+
+			<t>
+			When compared with RFC 2087, this document defines one more commonly
+			used resource type, adds optional OVERQUOTA response code and
+			defines two extra STATUS data items ("DELETED-MESSAGES" and "DELETED-STORAGE")
+			</t>
+		</section>
+	</middle>
+	<back>
+		<references title="Normative References">
+			&rfc2119;
+			&rfc3501;
+			<reference anchor="ABNF">
+				<front>
+					<title>Augmented BNF for Syntax Specifications: ABNF</title>
+					<author initials="D" surname="Crocker" fullname="Dave Crocker" role="editor">
+						<organization />
+					</author>
+					<author initials="P" surname="Overell" fullname="Paul Overell" role="editor">
+						<organization />
+					</author>
+					<date year="2005" month="October"/>
+				</front>
+				<seriesInfo name="RFC" value="4234" />
+				<format type="TXT" target="ftp://ftp.isi.edu/in-notes/rfc4234.txt" />
+			</reference>
+		</references>
+		<references title="Informative References">
+			&rfc2087;
+		</references>
+	</back>
+</rfc>
